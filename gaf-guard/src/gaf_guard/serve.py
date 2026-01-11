@@ -153,6 +153,101 @@ async def orchestrator(
         LOGGER.error("Internal Server Error: " + str(e))
 
 
+@server.agent(
+    name="risk_generation",
+    description="Effectively detect risks associated with LLMs for a given use-case",
+    metadata=Metadata(
+        license="Apache-2.0",
+        programming_language="Python",
+        natural_languages=["en"],
+        framework="GAF-Guard",
+        tags=["AI Risks"],
+        links=[
+            Link(
+                type=LinkType.SOURCE_CODE,
+                url=AnyUrl(
+                    "https://github.com/IBM/ai-atlas-nexus-demos/blob/main/gaf-guard/gaf_guard/agents/risk_generation.py"
+                ),
+            ),
+            Link(
+                type=LinkType.HOMEPAGE,
+                url=AnyUrl(
+                    "https://github.com/IBM/ai-atlas-nexus-demos/tree/main/gaf-guard"
+                ),
+            ),
+        ],
+        recommended_models=["granite3.3:8b"],
+    ),
+)
+async def risk_generation(
+    input: list[Message], context: Context
+) -> AsyncGenerator[RunYield, RunYieldResume]:
+
+    try:
+        message = WorkflowStepMessage(
+            **json.loads(str(reduce(lambda x, y: x + y, input)))
+        )
+
+        # Get run configs
+        RUN_CONFIGS = message.run_configs or {}
+
+        # Prepare config parameters
+        config = CLIENT_CONFIGS.setdefault(
+            context.session.id,
+            {
+                "trial_name": f"Trial_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}",
+                "recursion_limit": 100,
+                "run_id": str(uuid.uuid4()),
+                "run_name": f"GAF-Guard-UserIntent",
+                "configurable": {"thread_id": context.session.id} | RUN_CONFIGS,
+            },
+        )
+        if message.step_type == MessageType.HITL_RESPONSE:
+            state_dict = Command(resume=message.content)
+        elif message.step_type == MessageType.WORKFLOW_INPUT:
+            state_dict = message.content
+        else:
+            raise Exception(
+                f"Invalid message type received: {message.step_type}. Valid types are: {MessageType._member_names_}"
+            )
+
+        for event in GAF_GUARD_AGENTS["RiskGeneratorAgent"].workflow.stream(
+            input=state_dict,
+            config=config,
+            stream_mode="custom",
+            subgraphs=True,
+        ):
+            for dest_type, message in event[1].items():
+                if dest_type == "client":
+                    yield Message(
+                        role=Role.AGENT + "/risk_generator",
+                        parts=[
+                            MessagePart(
+                                content=message.model_dump_json(),
+                                content_type="text/plain",
+                            )
+                        ],
+                    )
+                elif dest_type == "logger":
+                    await GAF_GUARD_AGENTS["TrialLoggerAgent"].workflow.ainvoke(
+                        input=message.model_dump(),
+                        config={
+                            "configurable": {
+                                "thread_id": 1,
+                                "trial_name": config["trial_name"],
+                            }
+                            | RUN_CONFIGS
+                        },
+                    )
+
+    except HumanInterruptionException as e:
+        yield MessageAwaitRequest(
+            message=Message(role="agent", parts=[MessagePart(content=str(e))])
+        )
+    except Exception as e:
+        LOGGER.error("Internal Server Error: " + str(e))
+
+
 @server.agent(name="benchmark")
 async def run_benchmark(
     input: list[Message], context: Context

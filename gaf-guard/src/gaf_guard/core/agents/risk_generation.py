@@ -1,13 +1,13 @@
 from functools import partial
 from typing import Dict, List, Optional
 
+from ai_atlas_nexus.blocks.inference import InferenceEngine
+from ai_atlas_nexus.data import load_resource
+from ai_atlas_nexus.library import AIAtlasNexus
 from langchain_core.runnables.config import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 from rich.console import Console
-from ai_atlas_nexus.blocks.inference import InferenceEngine
-from ai_atlas_nexus.data import load_resource
-from ai_atlas_nexus.library import AIAtlasNexus
 
 from gaf_guard.core.agents import Agent
 from gaf_guard.core.decorators import workflow_step
@@ -211,16 +211,17 @@ class RiskGeneratorAgent(Agent):
 
         # Add edges to connect nodes
         graph.add_edge(START, "Get AI Domain")
-        graph.add_conditional_edges(
-            source="Get AI Domain",
-            path=if_cot_examples_found,
-            path_map={
-                True: "Few Shot Risk Questionnaire Output",
-                False: "Zero Shot Risk Questionnaire Output",
-            },
-        )
-        graph.add_edge("Few Shot Risk Questionnaire Output", "Identify AI Risks")
-        graph.add_edge("Zero Shot Risk Questionnaire Output", "Identify AI Risks")
-        graph.add_edge("Identify AI Risks", "Identify AI Tasks")
-        graph.add_edge("Identify AI Tasks", "Persist To Memory")
-        graph.add_edge("Persist To Memory", END)
+        graph.add_edge("Get AI Domain", END)
+        # graph.add_conditional_edges(
+        #     source="Get AI Domain",
+        #     path=if_cot_examples_found,
+        #     path_map={
+        #         True: "Few Shot Risk Questionnaire Output",
+        #         False: "Zero Shot Risk Questionnaire Output",
+        #     },
+        # )
+        # graph.add_edge("Few Shot Risk Questionnaire Output", "Identify AI Risks")
+        # graph.add_edge("Zero Shot Risk Questionnaire Output", "Identify AI Risks")
+        # graph.add_edge("Identify AI Risks", "Identify AI Tasks")
+        # graph.add_edge("Identify AI Tasks", "Persist To Memory")
+        # graph.add_edge("Persist To Memory", END)
