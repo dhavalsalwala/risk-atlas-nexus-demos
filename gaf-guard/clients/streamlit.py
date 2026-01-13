@@ -66,9 +66,26 @@ run_configs = {
 resolve_file_paths(run_configs)
 
 
-def render(content, role):
-    if isinstance(content, dict):
-        for key, value in content.items():
+def print_server_msg():
+    console.print(
+        f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] [italic bold white] :rocket: Connected to GAF Guard Server at[/italic bold white] [bold white]{st.session_state.host}:{st.session_state.port}[/bold white]"
+    )
+    console.print(
+        f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] Client Id: {st.session_state.client_session._session.id}"
+    )
+    console.print(
+        f"""
+    You can now view your Streamlit app in your browser.
+
+    Local URL: http://localhost:8501
+"""
+    )
+
+
+def render(message: WorkflowStepMessage):
+    st.session_state.messages.append(message)
+    if isinstance(message.content, dict):
+        for key, value in message.content.items():
             if key == "risk_report":
                 data = "\n"
                 for (
@@ -77,10 +94,10 @@ def render(content, role):
                 ) in value.items():
                     data += f":yellow[Check for {risk_report_key.title()}]: {pprint(risk_report_key, risk_report_value)}\n"
 
-                with st.chat_message(role):
+                with st.chat_message(message.step_role.value):
                     st.markdown(data)
             else:
-                with st.chat_message(role):
+                with st.chat_message(message.step_role.value):
                     if isinstance(value, List) or isinstance(value, Dict):
                         st.json(value, expanded=2)
                     elif isinstance(value, str) and key.endswith("alert"):
@@ -92,32 +109,39 @@ def render(content, role):
                             f":yellow[{key.replace('_', ' ').title()}]: {value}"
                         )
     else:
-        with st.chat_message(role):
-            st.markdown(content)
+        with st.chat_message(message.step_role.value):
+            if message.step_type == MessageType.WORKFLOW_STARTED:
+                st.markdown(f":blue[{message.step_name}]: {message.content}")
+            elif message.step_type == MessageType.STEP_STARTED:
+                st.markdown(f"\n:blue[Workflow Step:] {message.step_name}....Started")
+            elif message.step_type == MessageType.STEP_COMPLETED:
+                st.markdown(f"\n:blue[Workflow Step:] {message.step_name}....Completed")
+            elif message.step_type == MessageType.HITL_QUERY:
+                st.markdown(f":blue[{message.content}]")
+            else:
+                st.markdown(message.content)
 
 
 async def run_app(host, port):
 
     if "client_session" not in st.session_state:
+        st.session_state.host = host
+        st.session_state.port = port
         client = Client(base_url=f"http://{host}:{port}")
         st.session_state.client_session = client.session()
         st.session_state.input_message_type = MessageType.WORKFLOW_INPUT
         st.session_state.input_message_query = "Enter user intent here"
         st.session_state.input_message_key = "user_intent"
-        st.session_state.messages = [{"role": "system", "content": "New Session 👇"}]
-        console.print(
-            f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] [italic bold white] :rocket: Connected to GAF Guard Server at[/italic bold white] [bold white]localhost:8000[/bold white]"
-        )
-        console.print(
-            f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] Client Id: {st.session_state.client_session._session.id}"
-        )
-        console.print(
-            f"""
-    You can now view your Streamlit app in your browser.
+        st.session_state.messages = [
+            WorkflowStepMessage(
+                step_type=MessageType.WORKFLOW_INPUT,
+                step_name="Landing",
+                step_role="system",
+                content="New Session 👇",
+            )
+        ]
 
-    Local URL: http://localhost:8501
-"""
-        )
+    print_server_msg()
 
     st.title(
         ":yellow[GAF Guard]",
@@ -134,11 +158,7 @@ async def run_app(host, port):
 
     # Display chat messages from history
     for message in st.session_state.messages:
-        if message["role"] in ["assistant", "user"]:
-            render(message["content"], message["role"])
-        else:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        render(message)
 
     async with st.session_state.client_session:
         # Accept user input
@@ -204,66 +224,16 @@ async def run_app(host, port):
                     ],
                 ):
                     if event.type == "message.part":
-                        message = WorkflowStepMessage(**json.loads(event.part.content))
-
-                        if message.step_type == MessageType.WORKFLOW_STARTED:
-                            with st.chat_message(message.step_role.value):
-                                st.markdown(
-                                    f":blue[{message.step_name}]: {message.content}"
-                                )
-                                st.session_state.messages.append(
-                                    {
-                                        "role": message.step_role.value,
-                                        "content": f":blue[{message.step_name}]: {message.content}",
-                                    }
-                                )
-                        elif message.step_type == MessageType.STEP_STARTED:
-                            # if message.step_desc:
-                            #     console.print(message.step_desc, **message.step_kwargs)
-                            with st.chat_message(message.step_role.value):
-                                st.markdown(
-                                    f"\n:blue[Workflow Step:] {message.step_name}....Started"
-                                )
-                                st.session_state.messages.append(
-                                    {
-                                        "role": message.step_role.value,
-                                        "content": f"\n:blue[Workflow Step:] {message.step_name}....Started",
-                                    }
-                                )
-                        elif message.step_type == MessageType.STEP_COMPLETED:
-                            with st.chat_message(message.step_role.value):
-                                st.markdown(
-                                    f"\n:blue[Workflow Step:] {message.step_name}....Completed"
-                                )
-                                st.session_state.messages.append(
-                                    {
-                                        "role": message.step_role.value,
-                                        "content": f"\n:blue[Workflow Step:] {message.step_name}....Completed",
-                                    }
-                                )
-                        elif message.step_type == MessageType.STEP_DATA:
-                            render(message.content, message.step_role.value)
-                            st.session_state.messages.append(
-                                {
-                                    "role": message.step_role.value,
-                                    "content": message.content,
-                                }
-                            )
+                        render(WorkflowStepMessage(**json.loads(event.part.content)))
                     elif event.type == "run.awaiting":
                         if hasattr(event, "run"):
-                            message = WorkflowStepMessage(
-                                **json.loads(
-                                    event.run.await_request.message.parts[0].content
+                            render(
+                                WorkflowStepMessage(
+                                    **json.loads(
+                                        event.run.await_request.message.parts[0].content
+                                    )
                                 )
                             )
-                            with st.chat_message(message.step_role.value):
-                                st.markdown(f":blue[{message.content}]")
-                                st.session_state.messages.append(
-                                    {
-                                        "role": message.step_role.value,
-                                        "content": f":blue[{message.content}]",
-                                    }
-                                )
                             st.session_state["input_message_type"] = (
                                 MessageType.HITL_RESPONSE
                             )
