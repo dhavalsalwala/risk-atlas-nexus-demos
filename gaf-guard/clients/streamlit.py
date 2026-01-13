@@ -2,10 +2,13 @@ import asyncio
 
 #!/usr/bin/env python
 import os
+import socket
+from datetime import datetime
 
 import streamlit as st
 from acp_sdk.client import Client
 from acp_sdk.models import Message, MessagePart
+from rich.console import Console
 
 from gaf_guard.toolkit.file_utils import resolve_file_paths
 
@@ -23,11 +26,18 @@ from gaf_guard.core.models import WorkflowStepMessage
 from gaf_guard.toolkit.enums import MessageType, Role
 
 
+st.set_page_config(
+    page_title="GAF Guard - A real-time monitoring system for risk assessment and drift monitoring.",
+    layout="wide",  # This sets the app to wide mode
+    # initial_sidebar_state="expanded",
+)
+
 # def signal_handler(sig, frame):
 #     print("Exiting...")
 #     for task in asyncio.tasks.all_tasks():
 #         task.cancel()
 #     sys.exit(0)
+console = Console(log_time=True)
 
 
 def pprint(key, value):
@@ -56,6 +66,36 @@ run_configs = {
 resolve_file_paths(run_configs)
 
 
+def render(content, role):
+    if isinstance(content, dict):
+        for key, value in content.items():
+            if key == "risk_report":
+                data = "\n"
+                for (
+                    risk_report_key,
+                    risk_report_value,
+                ) in value.items():
+                    data += f":yellow[Check for {risk_report_key.title()}]: {pprint(risk_report_key, risk_report_value)}\n"
+
+                with st.chat_message(role):
+                    st.markdown(data)
+            else:
+                with st.chat_message(role):
+                    if isinstance(value, List) or isinstance(value, Dict):
+                        st.json(value, expanded=2)
+                    elif isinstance(value, str) and key.endswith("alert"):
+                        st.markdown(
+                            f":yellow[{key.replace('_', ' ').title()}]: :red[{value}]"
+                        )
+                    else:
+                        st.markdown(
+                            f":yellow[{key.replace('_', ' ').title()}]: {value}"
+                        )
+    else:
+        with st.chat_message(role):
+            st.markdown(content)
+
+
 async def run_app(host, port):
 
     if "client_session" not in st.session_state:
@@ -64,13 +104,20 @@ async def run_app(host, port):
         st.session_state.input_message_type = MessageType.WORKFLOW_INPUT
         st.session_state.input_message_query = "Enter user intent here"
         st.session_state.input_message_key = "user_intent"
-        st.session_state.messages = [{"role": "System", "content": "New Session 👇"}]
+        st.session_state.messages = [{"role": "system", "content": "New Session 👇"}]
+        console.print(
+            f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] [italic bold white] :rocket: Connected to GAF Guard Server at[/italic bold white] [bold white]localhost:8000[/bold white]"
+        )
+        console.print(
+            f"[[bold white]{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}[/]] Client Id: {st.session_state.client_session._session.id}"
+        )
+        console.print(
+            f"""
+    You can now view your Streamlit app in your browser.
 
-    st.set_page_config(
-        page_title="GAF Guard - A real-time monitoring system for risk assessment and drift monitoring.",
-        layout="wide",  # This sets the app to wide mode
-        # initial_sidebar_state="expanded",
-    )
+    Local URL: http://localhost:8501
+"""
+        )
 
     st.title(
         ":yellow[GAF Guard]",
@@ -80,12 +127,6 @@ async def run_app(host, port):
         "A real-time monitoring system for risk assessment and drift monitoring",
         text_alignment="center",
     )
-
-    # st.caption(
-    #     f"{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}   🚀   :small[Connected to :yellow[GAF Guard] Server at]",
-    #     text_alignment="center",
-    # )
-
     st.markdown(
         f":violet-badge[:material/rocket_launch: Connected to :yellow[GAF Guard] Server:] :orange-badge[:material/check: {host}:{port}]",
         text_alignment="center",
@@ -93,8 +134,11 @@ async def run_app(host, port):
 
     # Display chat messages from history
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        if message["role"] in ["assistant", "user"]:
+            render(message["content"], message["role"])
+        else:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
     async with st.session_state.client_session:
         # Accept user input
@@ -167,6 +211,12 @@ async def run_app(host, port):
                                 st.markdown(
                                     f":blue[{message.step_name}]: {message.content}"
                                 )
+                                st.session_state.messages.append(
+                                    {
+                                        "role": message.step_role.value,
+                                        "content": f":blue[{message.step_name}]: {message.content}",
+                                    }
+                                )
                         elif message.step_type == MessageType.STEP_STARTED:
                             # if message.step_desc:
                             #     console.print(message.step_desc, **message.step_kwargs)
@@ -192,50 +242,13 @@ async def run_app(host, port):
                                     }
                                 )
                         elif message.step_type == MessageType.STEP_DATA:
-                            if isinstance(message.content, dict):
-                                for key, value in message.content.items():
-                                    if key == "risk_report":
-                                        data = []
-                                        for (
-                                            risk_report_key,
-                                            risk_report_value,
-                                        ) in value.items():
-                                            # console.print(
-                                            #     f"[bold yellow]Check for {risk_report_key.title()}[/bold yellow]: {pprint(risk_report_key, risk_report_value)}",
-                                            #     **message.step_kwargs,
-                                            # )
-                                            data.append(
-                                                f":yellow[Check for {risk_report_key.title()}]: {pprint(risk_report_key, risk_report_value)}"
-                                            )
-
-                                        with st.chat_message(message.step_role.value):
-                                            st.markdown(data)
-                                            st.session_state.messages.append(
-                                                {
-                                                    "role": message.step_role.value,
-                                                    "content": data,
-                                                }
-                                            )
-                                    else:
-                                        with st.chat_message(message.step_role.value):
-                                            st.markdown(
-                                                f":yellow[{key.replace('_', ' ').title()}]: {pprint(key, value)}"
-                                            )
-                                            st.session_state.messages.append(
-                                                {
-                                                    "role": message.step_role.value,
-                                                    "content": f":yellow[{key.replace('_', ' ').title()}]: {pprint(key, value)}",
-                                                }
-                                            )
-                            else:
-                                with st.chat_message(message.step_role.value):
-                                    st.markdown(message.content)
-                                    st.session_state.messages.append(
-                                        {
-                                            "role": message.step_role.value,
-                                            "content": message.content,
-                                        }
-                                    )
+                            render(message.content, message.step_role.value)
+                            st.session_state.messages.append(
+                                {
+                                    "role": message.step_role.value,
+                                    "content": message.content,
+                                }
+                            )
                     elif event.type == "run.awaiting":
                         if hasattr(event, "run"):
                             message = WorkflowStepMessage(
@@ -290,4 +303,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app(standalone_mode=False)
+    app()
