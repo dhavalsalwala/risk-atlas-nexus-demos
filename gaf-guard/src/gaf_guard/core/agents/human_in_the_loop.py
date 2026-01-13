@@ -10,9 +10,9 @@ from rich.console import Console
 
 from gaf_guard.core.agents import Agent
 from gaf_guard.core.decorators import workflow_step
+from gaf_guard.core.models import WorkflowStepMessage
 from gaf_guard.toolkit.enums import MessageType, Role
 from gaf_guard.toolkit.exceptions import HumanInterruptionException
-from gaf_guard.core.models import WorkflowStepMessage
 
 
 console = Console()
@@ -42,7 +42,7 @@ def get_human_response(state: HumanInTheLoopAgentState, config: RunnableConfig):
                         + f"\nPlease Accept (Press Enter) or Suggest edits for AI Risks (Type your answer as a python List)"
                     ),
                     step_name="Human Intervention",
-                    step_role=Role.SYSTEM,
+                    step_role=Role.AGENT,
                 ).model_dump()
             )
         except GraphInterrupt as e:

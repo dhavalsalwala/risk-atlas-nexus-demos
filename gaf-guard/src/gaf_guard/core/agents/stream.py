@@ -50,7 +50,7 @@ def load_input_prompts(state: StreamAgentState, config: RunnableConfig):
                 step_type=MessageType.HITL_QUERY,
                 content="\nPlease choose one of the options for real-time Risk Assessment and Drift Monitoring\n1. Enter prompt manually\n2. Start streaming prompts from a JSON file.\nYour Choice ",
                 step_name="Stream Prompt",
-                step_role=Role.SYSTEM,
+                step_role=Role.AGENT,
                 step_kwargs={
                     "choices": [
                         "1",
@@ -67,7 +67,7 @@ def load_input_prompts(state: StreamAgentState, config: RunnableConfig):
                         step_type=MessageType.HITL_QUERY,
                         content="\nEnter your prompt",
                         step_name="Stream Prompt",
-                        step_role=Role.SYSTEM,
+                        step_role=Role.AGENT,
                     ).model_dump()
                 )["response"]
             ]
@@ -77,7 +77,7 @@ def load_input_prompts(state: StreamAgentState, config: RunnableConfig):
                     step_type=MessageType.HITL_QUERY,
                     content="\nEnter JSON file path",
                     step_name="Stream Prompt",
-                    step_role=Role.SYSTEM,
+                    step_role=Role.AGENT,
                 ).model_dump()
             )
             prompts = json.load(Path(prompt_file["response"]).open("r"))

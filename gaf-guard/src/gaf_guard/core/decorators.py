@@ -99,7 +99,7 @@ def workflow_step(
             write_to_stream = get_stream_writer()
             message = WorkflowStepMessage(
                 step_type=MessageType.STEP_STARTED,
-                step_role=step_role,
+                step_role=Role.SYSTEM,
                 step_name=step_name or func.__name__,
                 step_desc=step_desc,
                 step_kwargs=step_kwargs,
@@ -110,7 +110,11 @@ def workflow_step(
             event = func(*args, **kwargs, config=config)
 
             event_message = message.model_copy(
-                update={"step_type": MessageType.STEP_DATA, "content": event}
+                update={
+                    "step_role": step_role,
+                    "step_type": MessageType.STEP_DATA,
+                    "content": event,
+                }
             )
             write_to_stream(
                 {"client": event_message}
@@ -119,7 +123,10 @@ def workflow_step(
             write_to_stream(
                 {
                     "client": message.model_copy(
-                        update={"step_type": MessageType.STEP_COMPLETED}
+                        update={
+                            "step_type": MessageType.STEP_COMPLETED,
+                            "step_role": Role.SYSTEM,
+                        }
                     )
                 }
             )

@@ -125,7 +125,7 @@ async def orchestrator(
             for dest_type, message in event[1].items():
                 if dest_type == "client":
                     yield Message(
-                        role=Role.AGENT + "/orchestrator",
+                        role="agent",
                         parts=[
                             MessagePart(
                                 content=message.model_dump_json(),
