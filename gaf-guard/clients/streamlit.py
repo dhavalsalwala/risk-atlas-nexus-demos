@@ -26,6 +26,92 @@ from gaf_guard.core.models import WorkflowStepMessage
 from gaf_guard.toolkit.enums import MessageType, Role
 
 
+# Apply CSS to hide chat_input when app is running (processing)
+st.markdown(
+    """
+<style>
+.stApp[data-teststate=running] .stChatInput textarea,
+.stApp[data-test-script-state=running] .stChatInput textarea {
+    display: none !important;
+}
+.stTextInput {{
+      position: fixed;
+      bottom: 3rem;
+    }}
+.st-key-sidebar_bottom {
+        position: absolute;
+        bottom: 20px;
+        right: 5px;
+    }
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 0rem;
+    padding-left: 5rem;
+    padding-right: 5rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+footer_html = """
+<style>
+/* Styles for the footer container */
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: black; /* Light gray background */
+    color: white; /* Dark text */
+    text-align: center;
+    padding: 10px 0;
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.1); /* Subtle shadow */
+    font-size: 0.9em;
+}
+
+/* Style for links within the footer */
+.footer a {
+    color: #007bff; /* Blue links */
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
+}
+
+</style>
+
+<div class="footer">
+    <p>
+        Developed with ❤️ by <a href="https://streamlit.io/" target="_blank">Streamlit</a> |
+        <a href="https://your-website.com" target="_blank">Your Company</a> |
+        &copy; 2026 Your Organization
+    </p>
+</div>
+"""
+with st.sidebar:
+    st.sidebar.title("Settings")
+    option = st.selectbox(
+        "Risk Taxonomy",
+        ("IBM Risk Atlas"),
+    )
+    number = st.number_input("Drift Threshold", value=8)
+    st.button("Apply", type="primary")
+
+    st.divider()
+    text_input = st.text_input("GAF Guard Host", value="localhost")
+    number = st.number_input("GAF Guard Port", value=8000)
+    st.button("Reconnect", type="primary")
+
+    st.divider()
+    st.markdown(":blue[Powered by:]")
+    st.link_button(
+        "AI Atlas Nexus",
+        "https://github.com/IBM/ai-atlas-nexus",
+        icon=":material/thumb_up:",
+        type="secondary",
+    )
+
 st.set_page_config(
     page_title="GAF Guard - A real-time monitoring system for risk assessment and drift monitoring.",
     layout="wide",  # This sets the app to wide mode
@@ -80,34 +166,48 @@ def print_server_msg():
     Local URL: http://localhost:8501
 """
     )
+    with st.sidebar.container(key="sidebar_bottom"):
+        st.markdown(
+            f"Client Id: {str(st.session_state.client_session._session.id)[0:13]} \n :violet-badge[:material/rocket_launch: Connected to :yellow[GAF Guard] Server:] :orange-badge[:material/check: {st.session_state.host}:{st.session_state.port}]",
+            text_alignment="center",
+        )
 
 
 def render(message: WorkflowStepMessage):
-    st.session_state.messages.append(message)
     if isinstance(message.content, dict):
-        for key, value in message.content.items():
-            if key == "risk_report":
-                data = "\n"
-                for (
-                    risk_report_key,
-                    risk_report_value,
-                ) in value.items():
-                    data += f":yellow[Check for {risk_report_key.title()}]: {pprint(risk_report_key, risk_report_value)}\n"
+        if message.step_name == "Input Prompt":
+            with st.chat_message(message.step_role.value):
+                st.markdown(
+                    f":yellow[Prompt {message.content["prompt_index"]}]:  {message.content["prompt"]}"
+                )
+        else:
+            for key, value in message.content.items():
+                if key == "risk_report":
+                    data = []
+                    for (
+                        risk_report_key,
+                        risk_report_value,
+                    ) in value.items():
+                        data.append(
+                            f"Check for {risk_report_key.title()}: {risk_report_value}"
+                        )
 
-                with st.chat_message(message.step_role.value):
-                    st.markdown(data)
-            else:
-                with st.chat_message(message.step_role.value):
-                    if isinstance(value, List) or isinstance(value, Dict):
-                        st.json(value, expanded=2)
-                    elif isinstance(value, str) and key.endswith("alert"):
-                        st.markdown(
-                            f":yellow[{key.replace('_', ' ').title()}]: :red[{value}]"
-                        )
-                    else:
-                        st.markdown(
-                            f":yellow[{key.replace('_', ' ').title()}]: {value}"
-                        )
+                    with st.chat_message(message.step_role.value):
+                        st.markdown(":yellow[Risk Report]")
+                        st.json(data)
+                else:
+                    with st.chat_message(message.step_role.value):
+                        if isinstance(value, List) or isinstance(value, Dict):
+                            st.markdown(f":yellow[{key.replace('_', ' ').title()}]")
+                            st.json(value, expanded=2)
+                        elif isinstance(value, str) and key.endswith("alert"):
+                            st.markdown(
+                                f":yellow[{key.replace('_', ' ').title()}]: :red[{value}]"
+                            )
+                        else:
+                            st.markdown(
+                                f":yellow[{key.replace('_', ' ').title()}]: {value}"
+                            )
     else:
         with st.chat_message(message.step_role.value):
             if message.step_type == MessageType.WORKFLOW_STARTED:
@@ -132,6 +232,7 @@ async def run_app(host, port):
         st.session_state.input_message_type = MessageType.WORKFLOW_INPUT
         st.session_state.input_message_query = "Enter user intent here"
         st.session_state.input_message_key = "user_intent"
+        st.session_state.disabled_input = False
         st.session_state.messages = [
             WorkflowStepMessage(
                 step_type=MessageType.WORKFLOW_INPUT,
@@ -142,18 +243,14 @@ async def run_app(host, port):
         ]
 
     print_server_msg()
-
     st.title(
-        ":yellow[GAF Guard]",
+        f":yellow[GAF Guard]",
         text_alignment="center",
     )
     st.subheader(
         "A real-time monitoring system for risk assessment and drift monitoring",
         text_alignment="center",
-    )
-    st.markdown(
-        f":violet-badge[:material/rocket_launch: Connected to :yellow[GAF Guard] Server:] :orange-badge[:material/check: {host}:{port}]",
-        text_alignment="center",
+        divider=True,
     )
 
     # Display chat messages from history
@@ -162,16 +259,9 @@ async def run_app(host, port):
 
     async with st.session_state.client_session:
         # Accept user input
-        if input_message_response := st.chat_input(
-            st.session_state["input_message_query"]
-        ):
-            # Add user message to chat history
-            # st.session_state.messages.append({"role": "user", "content": user_intent})
-            # Display user message in chat message container
-            # with st.chat_message("user"):
-            #     st.markdown("User Intent: " + user_intent)
-
-            # chat_container.empty()
+        input_message_response = st.chat_input(st.session_state["input_message_query"])
+        if not input_message_response:
+            st.stop()
 
             # Display assistant response in chat message container
             # with st.chat_message("assistant"):
@@ -191,64 +281,60 @@ async def run_app(host, port):
             #         # Add a blinking cursor to simulate typing
             #         message_placeholder.markdown(full_response + "▌")
             #     message_placeholder.markdown(full_response)
-            # # Add assistant response to chat history
-            # st.session_state.messages.append(
-            #     {"role": "assistant", "content": full_response}
-            # )
 
-            COMPLETED = False
-            while True:
-                async for event in st.session_state.client_session.run_stream(
-                    agent="orchestrator",
-                    input=[
-                        Message(
-                            parts=[
-                                MessagePart(
-                                    content=WorkflowStepMessage(
-                                        step_name="GAF Guard Client",
-                                        step_type=st.session_state[
-                                            "input_message_type"
-                                        ],
-                                        step_role=Role.USER,
-                                        content={
-                                            st.session_state[
-                                                "input_message_key"
-                                            ]: input_message_response
-                                        },
-                                        run_configs=run_configs,
-                                    ).model_dump_json(),
-                                    content_type="text/plain",
-                                )
-                            ]
+        COMPLETED = False
+        while True:
+            async for event in st.session_state.client_session.run_stream(
+                agent="orchestrator",
+                input=[
+                    Message(
+                        parts=[
+                            MessagePart(
+                                content=WorkflowStepMessage(
+                                    step_name="GAF Guard Client",
+                                    step_type=st.session_state["input_message_type"],
+                                    step_role=Role.USER,
+                                    content={
+                                        st.session_state[
+                                            "input_message_key"
+                                        ]: input_message_response
+                                    },
+                                    run_configs=run_configs,
+                                ).model_dump_json(),
+                                content_type="text/plain",
+                            )
+                        ]
+                    )
+                ],
+            ):
+                if event.type == "message.part":
+                    message = WorkflowStepMessage(**json.loads(event.part.content))
+                    st.session_state.messages.append(message)
+                    render(message)
+                elif event.type == "run.awaiting":
+                    if hasattr(event, "run"):
+                        message = WorkflowStepMessage(
+                            **json.loads(
+                                event.run.await_request.message.parts[0].content
+                            )
                         )
-                    ],
-                ):
-                    if event.type == "message.part":
-                        render(WorkflowStepMessage(**json.loads(event.part.content)))
-                    elif event.type == "run.awaiting":
-                        if hasattr(event, "run"):
-                            render(
-                                WorkflowStepMessage(
-                                    **json.loads(
-                                        event.run.await_request.message.parts[0].content
-                                    )
-                                )
-                            )
-                            st.session_state["input_message_type"] = (
-                                MessageType.HITL_RESPONSE
-                            )
-                            st.session_state["input_message_key"] = "response"
-                            st.session_state["input_message_query"] = (
-                                "Enter your response here"
-                            )
-                            st.rerun()
-                            # COMPLETED = True
+                        st.session_state.messages.append(message)
+                        render(message)
+                        st.session_state["input_message_type"] = (
+                            MessageType.HITL_RESPONSE
+                        )
+                        st.session_state["input_message_key"] = "response"
+                        st.session_state["input_message_query"] = (
+                            "Enter your response here"
+                        )
+                        st.rerun()
+                        # COMPLETED = True
 
-                    elif event.type == "run.completed":
-                        COMPLETED = True
+                elif event.type == "run.completed":
+                    COMPLETED = True
 
-                if COMPLETED:
-                    break
+            if COMPLETED:
+                break
 
 
 @app.command()
