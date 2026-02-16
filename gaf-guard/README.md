@@ -29,7 +29,8 @@ Check out the official repo of [AI Atlas Nexus](https://github.com/IBM/ai-atlas-
 ## Agentic Workflow
 The present agentic workflow is as shown below.
 
-<img width="742" height="2092" alt="output" src="https://github.com/user-attachments/assets/93db9787-ef68-41af-a89b-ad206cb49691" />
+<img width="661" height="2217" alt="output" src="https://github.com/user-attachments/assets/f23ad573-fc7b-49f5-8c50-8286a0c4f621" />
+
 
 
 ## Documentation
